@@ -1,3 +1,5 @@
 **/*.exe
 **/xl_*
 **/*.db
+__debug_bin
+.vscode
