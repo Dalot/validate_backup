@@ -18,6 +18,13 @@ func main() {
 	flag.Parse()
 	start := time.Now()
 
+	str1 := "xl_before.json"
+	//str1 := "before.json"
+	str2 := "xl_after.json"
+	//str2 := "after.json"
+	beforeBackupPtr = &str1
+	afterBackupPtr = &str2
+
 	log.Println("before: ", *beforeBackupPtr, "after: ", *afterBackupPtr)
 	beforeReader, afterReader := initReaders(*beforeBackupPtr, *afterBackupPtr)
 	// this program is about parsing a large json file using a small memory footprint.
