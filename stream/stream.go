@@ -82,9 +82,9 @@ func Compare(beforeReader io.Reader, afterReader io.Reader) (*Stream, Comparison
 		for _, list := range s.list {
 			len := len(list)
 			if len == 1 {
-				
+
 				s.compMsgs <- Different
-				
+
 				return
 			} else {
 				log.Fatalln(list)
@@ -93,7 +93,7 @@ func Compare(beforeReader io.Reader, afterReader io.Reader) (*Stream, Comparison
 		close(s.compMsgs)
 		wgResult.Done()
 	}(&wgResult)
-	
+
 	go func() {
 		wgResult.Wait()
 	}()
@@ -104,8 +104,7 @@ func Compare(beforeReader io.Reader, afterReader io.Reader) (*Stream, Comparison
 			return s, comp
 		}
 	}
-	
-	
+
 	log.Println("FINISHED")
 	return s, Equal
 }
@@ -137,9 +136,9 @@ func (s *Stream) Parse(input io.Reader, msgs chan<- *Obj, wg *sync.WaitGroup) {
 			}
 			log.Fatal("[2]", err)
 		}
-		
+
 		msgs <- &obj
-		
+
 		count++
 	}
 
@@ -156,7 +155,7 @@ func (s *Stream) Parse(input io.Reader, msgs chan<- *Obj, wg *sync.WaitGroup) {
 }
 
 func (s *Stream) comparisonWorker(wg *sync.WaitGroup, objMsgs chan *Obj, msgType Type) {
-	
+
 	defer wg.Done()
 
 	for msg := range objMsgs {
@@ -169,7 +168,7 @@ func (s *Stream) comparisonWorker(wg *sync.WaitGroup, objMsgs chan *Obj, msgType
 			s.compMsgs <- Different
 			return
 		}
-		
+
 		mutex.Lock()
 		s.list[msg.Id] = append(s.list[msg.Id], parsedObj)
 		mutex.Unlock()
@@ -177,27 +176,17 @@ func (s *Stream) comparisonWorker(wg *sync.WaitGroup, objMsgs chan *Obj, msgType
 		mutex.RLock()
 		len := len(s.list[msg.Id])
 		hasTwoItems := len == 2
-		
+
 		if hasTwoItems {
-
-			
 			differentTypes := s.list[msg.Id][0].Type == s.list[msg.Id][1].Type
-			
 			if differentTypes {
-
 				s.compMsgs <- DuplicateIds
-
 				return
 			}
 
-			
 			namesAreDifferent := s.list[msg.Id][0].Name != s.list[msg.Id][1].Name
-			
-			
 			if namesAreDifferent {
-
 				s.compMsgs <- Different
-
 			}
 			mutex.RUnlock()
 			mutex.Lock()
@@ -207,18 +196,18 @@ func (s *Stream) comparisonWorker(wg *sync.WaitGroup, objMsgs chan *Obj, msgType
 		} else {
 			mutex.RUnlock()
 		}
-		
+
 	}
 
 }
 
 func (s *Stream) Flush() {
-	
+
 	s.beforeListMsg = make(chan *Obj)
 	s.afterListMsg = make(chan *Obj)
 	s.compMsgs = make(chan Comparison)
 	s.list = map[string][]ParsedObj{}
-	
+
 	mutex = &sync.RWMutex{}
 }
 
