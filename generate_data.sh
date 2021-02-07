@@ -3,9 +3,9 @@
 array=(NoFe0qnuu6 snRDxBxbmM vqUSSLqldG FI1nIFv3Ys LmiXlP21oW Fx7RBcDRSB mk0pfy0bua Q7PI34p8wM fH3JfC56ig F2IxqWYWLU Buo56XJopP Yd2jozImH4 hjV5LzpFhN IvWIW8Ea7w G6uo3w1RKH U4HzKMLzWU tQBSEoJYd3 8uPFmq3UZV eUhsyiUjsQ l9xXUYiQkv SCWu5w8Zn7 OKaRfgtR3v HZUsPpPIdE 2yayJECee4 NbkfJrCn9K hc5mr3Ykp9 uNyLG8Si8b GsW2wAd796 edzJiJ3ZNQ T3J3xSsbDH WW1oPKhdsv eEl8QtXKXl HHdxyHivsL Eu42OjC8rP 8ol6jwMRhk 6yoLSsK9NI IgIbeSK6G7 a3wfhGAEpl sdoj1ex1tN dOzsorXVdx 9UsdqD1KId wmnv83vyun D87mbzUbpQ 1g88y5xbjE 9vO2iLxbYU eIwaxN54En 4xghT245Nr M6wXkGGgmi UVsBJqk5H1 FYTuXaIedV un2GBvd3OU 54EzMLzMbj Zg1HlNZE76 3bbbo3zAem bind9HhAh6 6yXuesrhXp 1KdGBgT4Lu tFfz2mjgCo z0O8cy1xwF F3ddSLl0yi t75UuglTjO mifTHOVGv4 6sB4jPmy1B 8wcwzglVOE 8zDor7rAGM DhKA6Ollhb cse01ss6u7 PvtXUejdJ0 Vprn48dxJk 0ngn3foM82 isrrNaFj7B a7IeZNQ2pl VBLSZzMqx5 dBTynwaW2D yHXdEpipBX TirUmwOri5 3b8DGcII1U vBr9UpVK4q DRWggIK3x2 VXBmCJLI3C NBpSIfxnRZ lSxSgncidm NIClD6jAkU NKqQortaBq CTWSZp72DI g0CpHfUHbk XDAWMIrDSG mgsfq8NUT7 oMuzD6G2Gz x7kcmzCMMX 5T8hremXJD uRekPxDsOx u2Km4CGVET eLhGmG7Agv qaHmE91X3N YruuhIDDvg nBL2zleLHI hViHKOzQcu CPLdxLdDxZ CWQEMNwY8q)
 
 file=./xl_after.json
-echo [ > $file
+#echo [ > $file
 start=`date +%s`
-for i in `seq 0 7000000`;
+for i in `seq 7000001 10000000`;
     do
         let "id1=$i+1"
         let "id2=$i+2"

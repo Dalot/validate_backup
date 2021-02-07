@@ -1,46 +1,75 @@
 package stream
 
 import (
-	"bytes"
 	"log"
 	"testing"
+
+	"github.com/Dalot/validate_backup/input"
 )
 
 var cases = []struct {
-	a      string
-	b      string
-	result Comparison
+	a                 string
+	b                 string
+	result            Comparison
 	alternativeResult Comparison
 }{
-	/* 0 */{`[{"id": "5","name": "John doe"}]`, `[{"id": "5","name": "John doe"}]`, Equal, None},
-	{`[{"id": "7","name": "John doe"}]`, `[{"id": "7","name": "John doe"}]`, Equal, None},
-	{`[{"id": "5","name": "John doe"}]`, `[{"id": "5","name": "42"}]`, Different, None},
-	{`[{"id": "8","name": "John doe"},{"id": "6","name": "John doe"}]`, `[{"id": "6","name": "John doe"},{"id": "8","name": "John doe"}]`, Equal, None},
-	{`[{"id": "4","name": "John doe"}]`, `[{"id": "5","name": "John doe"}]`, Different, None},
-	/* 5 */{`[{"id": "5","name": "John doe"},{"id": "5","name": "John doe"}]`, `[{"id": "9","name": "John doe"},{"id": "5","name": "John doe"}]`, DuplicateIds, Different},
-	{`[{"id": "5","name": "John doe"},{"id": "6","name": "John doe"}]`, `[{"id": "6","name": "John doe"},{"id": "6","name": "John doe"}]`, DuplicateIds, Different},
-	{`[{"id": "6","name": "John doe"}]`, `[{}]`, Different, None},
-	{`[{"id": "3","name": "John doe"}]`, `[{"id": "3"}]`, Different, None},
-	{`[{"id": "3","name": "John doe"}]`, `[{"name": "John Doe}]`, Different, None},
-	/* 10 */{`[{}]`, `[{}]`, Equal, None},
+	/* 0 */
+	//{`[{"id": "5","name": "John doe"}]`, `[{"id": "5","name": "John doe"}]`, Equal, None},
+	//{`[{"id": "7","name": "John doe"}]`, `[{"id": "7","name": "John doe"}]`, Equal, None},
+	//{`[{"id": "5","name": "John doe"}]`, `[{"id": "5","name": "42"}]`, Different, None},
+	//{`[{"id": "8","name": "John doe"},{"id": "6","name": "John doe"}]`, `[{"id": "6","name": "John doe"},{"id": "8","name": "John doe"}]`, Equal, None},
+	//{`[{"id": "4","name": "John doe"}]`, `[{"id": "5","name": "John doe"}]`, Different, None},
+	/* 5 */
+	//{`[{"id": "5","name": "John doe"},{"id": "5","name": "John doe"}]`, `[{"id": "9","name": "John doe"},{"id": "5","name": "John doe"}]`, DuplicateIds, Different},
+	//{`[{"id": "5","name": "John doe"},{"id": "6","name": "John doe"}]`, `[{"id": "6","name": "John doe"},{"id": "6","name": "John doe"}]`, DuplicateIds, Different},
+	//{`[{"id": "6","name": "John doe"}]`, `[{}]`, InvalidJson, None},
+	//{`[{"id": "3","name": "John doe"}]`, `[{"id": "3"}]`, Different, None},
+	//{`[{"id": "3","name": "John doe"}]`, `[{"name": "John Doe}]`, InvalidJson, None},
+	//{`[{"id": "3","name": "John doe"}]`, `[{"name": "John Doe}]`, InvalidJson, None},
+	{`[{"id": "3","name": "John doe", "job": "designer"}]`, `[{"id": "3","name": "John doe", "job": "designer"}]`, Equal, None},
+	/* 10 */
+	//{`[{}]`, `[{}]`, InvalidJson, None},
 }
 
 func TestCompare(t *testing.T) {
 	for n := 1; n <= 10; n++ {
 		for i, c := range cases {
 			log.Println("CASE ", i)
-			a := bytes.NewReader([]byte(c.a))
-			b := bytes.NewReader([]byte(c.b))
-	
+			bytesInput := input.BytesInput{
+				BeforeFileStr: c.a,
+				AfterFileStr:  c.b,
+			}
+			a, b := bytesInput.InitReaders()
+
 			_, result := Compare(a, b)
-	
+
 			if result != c.result {
-				if c.alternativeResult != None && result != c.alternativeResult {
+				hasAlternativeResult := c.alternativeResult != None
+				if hasAlternativeResult {
+					if result != c.alternativeResult {
+						t.Errorf("case %d failed, got: %v, expected: %v", i, result, c.result)
+					}
+				} else {
 					t.Errorf("case %d failed, got: %v, expected: %v", i, result, c.result)
 				}
 			}
-			
+
 		}
+	}
+}
+
+func TestCompareFiles(t *testing.T) {
+	str1 := "test_files/before.json"
+	str2 := "test_files/after.json"
+	filesInput := input.FilesInput{
+		BeforeFileStr: str1,
+		AfterFileStr:  str2,
+	}
+
+	beforeReader, afterReader := filesInput.InitReaders()
+	_, result := Compare(beforeReader, afterReader)
+	if result != Equal {
+		t.Errorf("case compare files failed , got: %v, expected: %v", result, Equal)
 	}
 }
 
@@ -56,12 +85,13 @@ func BenchmarkSlice(b *testing.B) {
 	}
 }
 
-func getObjects(n int) map[string]Obj {
-	list := make(map[string]Obj, n)
+func getObjects(n int) map[string]*ParsedObj {
+	list := make(map[string]*ParsedObj, n)
 	for i := range list {
-		list[i] = Obj{
+		list[i] = &ParsedObj{
 			Name: "John",
 			Id:   "Doe",
+			Type: Before,
 		}
 	}
 	return list

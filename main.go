@@ -1,14 +1,13 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
 	"log"
-	"os"
 	"time"
 
 	"github.com/Dalot/validate_backup/memstat"
+	"github.com/Dalot/validate_backup/reader"
 	"github.com/Dalot/validate_backup/stream"
 )
 
@@ -19,14 +18,14 @@ func main() {
 	start := time.Now()
 
 	//str1 := "xl_before.json"
-	str1 := "before.json"
+	//str1 := "before.json"
 	//str2 := "xl_after.json"
-	str2 := "after.json"
-	beforeBackupPtr = &str1
-	afterBackupPtr = &str2
+	//str2 := "after.json"
+	//beforeBackupPtr = &str1
+	//afterBackupPtr = &str2
 
 	log.Println("before: ", *beforeBackupPtr, "after: ", *afterBackupPtr)
-	beforeReader, afterReader := initReaders(*beforeBackupPtr, *afterBackupPtr)
+	beforeReader, afterReader := reader.InitReaders(*beforeBackupPtr, *afterBackupPtr)
 	// this program is about parsing a large json file using a small memory footprint.
 	// you may generate data using generate_data.sh it generate ~900mB in ~600 seconds.
 	go memstat.PrintUsage()
@@ -37,35 +36,4 @@ func main() {
 
 	fmt.Printf("To parse the file took [%v]\n", elapsed)
 
-}
-
-func initReaders(beforeFileStr string, afterFileStr string) (*bufio.Reader, *bufio.Reader) {
-	beforeFile, err := os.Open(beforeFileStr)
-	if err != nil {
-		log.Fatalf("Error to read [file=%v]: %v", beforeFileStr, err.Error())
-	}
-
-	beforeFileInfo, err := beforeFile.Stat()
-	if err != nil {
-		log.Fatalf("Could not obtain stat, handle error: %v", err.Error())
-	}
-
-	beforeReader := bufio.NewReader(beforeFile)
-
-	afterFile, err := os.Open(afterFileStr)
-	if err != nil {
-		log.Fatalf("Error to read [file=%v]: %v", afterFileStr, err.Error())
-	}
-
-	afterFileInfo, err := afterFile.Stat()
-	if err != nil {
-		log.Fatalf("Could not obtain stat, handle error: %v", err.Error())
-	}
-
-	afterReader := bufio.NewReader(afterFile)
-
-	fmt.Printf("The [%s] is %s long\n", beforeFileStr, memstat.FileSize(beforeFileInfo.Size()))
-	fmt.Printf("The [%s] is %s long\n", afterFileStr, memstat.FileSize(afterFileInfo.Size()))
-
-	return beforeReader, afterReader
 }

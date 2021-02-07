@@ -2,6 +2,7 @@ package stream
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -42,14 +43,25 @@ type ParsedObj struct {
 	Type Type
 }
 
-type List map[string][]ParsedObj
+type List map[string][]*ParsedObj
 
 type Stream struct {
 	beforeListMsg chan *Obj
 	afterListMsg  chan *Obj
 	compMsgs      chan Comparison
-	list          List
+	list          *List
 	mutex         *sync.RWMutex
+}
+
+func New() *Stream {
+	s := &Stream{}
+	s.mutex = &sync.RWMutex{}
+	s.beforeListMsg = make(chan *Obj)
+	s.afterListMsg = make(chan *Obj)
+	s.compMsgs = make(chan Comparison)
+	s.list = &List{}
+
+	return s
 }
 
 // Compare takes two readers, each to a json file, and compares them to find if they are equal
@@ -57,12 +69,7 @@ func Compare(beforeReader io.Reader, afterReader io.Reader) (*Stream, Comparison
 	var wgParse sync.WaitGroup
 	var wgCompare sync.WaitGroup
 	var wgResult sync.WaitGroup
-	s := &Stream{}
-	s.mutex = &sync.RWMutex{}
-	s.beforeListMsg = make(chan *Obj)
-	s.afterListMsg = make(chan *Obj)
-	s.compMsgs = make(chan Comparison)
-	s.list = map[string][]ParsedObj{}
+	s := New()
 
 	wgParse.Add(2)
 	go s.Parse(beforeReader, s.beforeListMsg, &wgParse)
@@ -71,6 +78,8 @@ func Compare(beforeReader io.Reader, afterReader io.Reader) (*Stream, Comparison
 		wgParse.Wait()
 	}()
 
+	for i := 0; i < 2; i++ {
+	}
 	wgCompare.Add(2)
 	go s.comparisonWorker(&wgCompare, s.beforeListMsg, Before)
 	go s.comparisonWorker(&wgCompare, s.afterListMsg, After)
@@ -79,7 +88,7 @@ func Compare(beforeReader io.Reader, afterReader io.Reader) (*Stream, Comparison
 	go func(wgResult *sync.WaitGroup) {
 		wgCompare.Wait()
 
-		for _, list := range s.list {
+		for _, list := range *s.list {
 			len := len(list)
 			if len != 2 {
 
@@ -127,14 +136,20 @@ func (s *Stream) Parse(input io.Reader, msgs chan<- *Obj, wg *sync.WaitGroup) {
 		var obj Obj
 		// decode an array value (Message)
 		err := decoder.Decode(&obj)
-
 		if err != nil {
-			if obj.Id == "" {
+			if errors.Is(err, io.ErrUnexpectedEOF) && obj.Id == "" {
 				log.Println("empty id: ", err)
-				s.compMsgs <- Different
+				s.compMsgs <- InvalidJson
 				return
+			} else {
+				log.Fatal("[2]", err)
 			}
-			log.Fatal("[2]", err)
+		}
+
+		if obj.Id == "" {
+			log.Println("empty id: ", err)
+			s.compMsgs <- InvalidJson
+			return
 		}
 
 		msgs <- &obj
@@ -170,28 +185,28 @@ func (s *Stream) comparisonWorker(wg *sync.WaitGroup, objMsgs chan *Obj, msgType
 		}
 
 		s.mutex.Lock()
-		s.list[msg.Id] = append(s.list[msg.Id], parsedObj)
+		(*s.list)[msg.Id] = append((*s.list)[msg.Id], &parsedObj)
 		s.mutex.Unlock()
 
 		s.mutex.RLock()
-		len := len(s.list[msg.Id])
+		len := len((*s.list)[msg.Id])
 		hasTwoItems := len == 2
 
 		if hasTwoItems {
-			differentTypes := s.list[msg.Id][0].Type == s.list[msg.Id][1].Type
+			differentTypes := (*s.list)[msg.Id][0].Type == (*s.list)[msg.Id][1].Type
 			if differentTypes {
 				s.compMsgs <- DuplicateIds
 				s.mutex.RUnlock()
 				return
 			}
 
-			namesAreDifferent := s.list[msg.Id][0].Name != s.list[msg.Id][1].Name
+			namesAreDifferent := (*s.list)[msg.Id][0].Name != (*s.list)[msg.Id][1].Name
 			if namesAreDifferent {
 				s.compMsgs <- Different
 			}
 			s.mutex.RUnlock()
 			s.mutex.Lock()
-			delete(s.list, msg.Id) // Whether Objects are equal ot Different, we can free memory
+			delete(*s.list, msg.Id) // Whether Objects are equal ot Different, we can free memory
 			s.mutex.Unlock()
 
 		} else {
