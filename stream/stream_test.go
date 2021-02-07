@@ -12,16 +12,17 @@ var cases = []struct {
 	result Comparison
 	alternativeResult Comparison
 }{
-	{`[{"id": "5","name": "John doe"}]`, `[{"id": "5","name": "John doe"}]`, Equal, None},
+	/* 0 */{`[{"id": "5","name": "John doe"}]`, `[{"id": "5","name": "John doe"}]`, Equal, None},
 	{`[{"id": "7","name": "John doe"}]`, `[{"id": "7","name": "John doe"}]`, Equal, None},
 	{`[{"id": "5","name": "John doe"}]`, `[{"id": "5","name": "42"}]`, Different, None},
 	{`[{"id": "8","name": "John doe"},{"id": "6","name": "John doe"}]`, `[{"id": "6","name": "John doe"},{"id": "8","name": "John doe"}]`, Equal, None},
 	{`[{"id": "4","name": "John doe"}]`, `[{"id": "5","name": "John doe"}]`, Different, None},
-	{`[{"id": "5","name": "John doe"},{"id": "5","name": "John doe"}]`, `[{"id": "9","name": "John doe"},{"id": "5","name": "John doe"}]`, DuplicateIds, Different},
+	/* 5 */{`[{"id": "5","name": "John doe"},{"id": "5","name": "John doe"}]`, `[{"id": "9","name": "John doe"},{"id": "5","name": "John doe"}]`, DuplicateIds, Different},
 	{`[{"id": "5","name": "John doe"},{"id": "6","name": "John doe"}]`, `[{"id": "6","name": "John doe"},{"id": "6","name": "John doe"}]`, DuplicateIds, Different},
 	{`[{"id": "6","name": "John doe"}]`, `[{}]`, Different, None},
 	{`[{"id": "3","name": "John doe"}]`, `[{"id": "3"}]`, Different, None},
 	{`[{"id": "3","name": "John doe"}]`, `[{"name": "John Doe}]`, Different, None},
+	/* 10 */{`[{}]`, `[{}]`, Equal, None},
 }
 
 func TestCompare(t *testing.T) {
@@ -31,7 +32,7 @@ func TestCompare(t *testing.T) {
 			a := bytes.NewReader([]byte(c.a))
 			b := bytes.NewReader([]byte(c.b))
 	
-			s, result := Compare(a, b)
+			_, result := Compare(a, b)
 	
 			if result != c.result {
 				if c.alternativeResult != None && result != c.alternativeResult {
@@ -39,7 +40,6 @@ func TestCompare(t *testing.T) {
 				}
 			}
 			
-			s.Flush()
 		}
 	}
 }

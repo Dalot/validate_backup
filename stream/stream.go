@@ -49,9 +49,8 @@ type Stream struct {
 	afterListMsg  chan *Obj
 	compMsgs      chan Comparison
 	list          List
+	mutex         *sync.RWMutex
 }
-
-var mutex = &sync.RWMutex{}
 
 // Compare takes two readers, each to a json file, and compares them to find if they are equal
 func Compare(beforeReader io.Reader, afterReader io.Reader) (*Stream, Comparison) {
@@ -59,6 +58,7 @@ func Compare(beforeReader io.Reader, afterReader io.Reader) (*Stream, Comparison
 	var wgCompare sync.WaitGroup
 	var wgResult sync.WaitGroup
 	s := &Stream{}
+	s.mutex = &sync.RWMutex{}
 	s.beforeListMsg = make(chan *Obj)
 	s.afterListMsg = make(chan *Obj)
 	s.compMsgs = make(chan Comparison)
@@ -81,7 +81,7 @@ func Compare(beforeReader io.Reader, afterReader io.Reader) (*Stream, Comparison
 
 		for _, list := range s.list {
 			len := len(list)
-			if len == 1 {
+			if len != 2 {
 
 				s.compMsgs <- Different
 
@@ -169,11 +169,11 @@ func (s *Stream) comparisonWorker(wg *sync.WaitGroup, objMsgs chan *Obj, msgType
 			return
 		}
 
-		mutex.Lock()
+		s.mutex.Lock()
 		s.list[msg.Id] = append(s.list[msg.Id], parsedObj)
-		mutex.Unlock()
+		s.mutex.Unlock()
 
-		mutex.RLock()
+		s.mutex.RLock()
 		len := len(s.list[msg.Id])
 		hasTwoItems := len == 2
 
@@ -181,6 +181,7 @@ func (s *Stream) comparisonWorker(wg *sync.WaitGroup, objMsgs chan *Obj, msgType
 			differentTypes := s.list[msg.Id][0].Type == s.list[msg.Id][1].Type
 			if differentTypes {
 				s.compMsgs <- DuplicateIds
+				s.mutex.RUnlock()
 				return
 			}
 
@@ -188,27 +189,17 @@ func (s *Stream) comparisonWorker(wg *sync.WaitGroup, objMsgs chan *Obj, msgType
 			if namesAreDifferent {
 				s.compMsgs <- Different
 			}
-			mutex.RUnlock()
-			mutex.Lock()
+			s.mutex.RUnlock()
+			s.mutex.Lock()
 			delete(s.list, msg.Id) // Whether Objects are equal ot Different, we can free memory
-			mutex.Unlock()
+			s.mutex.Unlock()
 
 		} else {
-			mutex.RUnlock()
+			s.mutex.RUnlock()
 		}
 
 	}
 
-}
-
-func (s *Stream) Flush() {
-
-	s.beforeListMsg = make(chan *Obj)
-	s.afterListMsg = make(chan *Obj)
-	s.compMsgs = make(chan Comparison)
-	s.list = map[string][]ParsedObj{}
-
-	mutex = &sync.RWMutex{}
 }
 
 func (c Comparison) String() string {
