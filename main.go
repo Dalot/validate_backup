@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/Dalot/validate_backup/memstat"
-	"github.com/Dalot/validate_backup/reader"
 	"github.com/Dalot/validate_backup/stream"
 )
 

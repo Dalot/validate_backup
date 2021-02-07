@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"reflect"
 	"strconv"
 	"sync"
 )
@@ -45,12 +46,19 @@ type ParsedObj struct {
 
 type List map[string][]*ParsedObj
 
+type JsonObj *map[string]interface{}
+
+type ListInterface map[string][]*map[string]interface{}
+
 type Stream struct {
-	beforeListMsg chan *Obj
-	afterListMsg  chan *Obj
-	compMsgs      chan Comparison
-	list          *List
-	mutex         *sync.RWMutex
+	beforeListMsg          chan *Obj
+	afterListMsg           chan *Obj
+	beforeListMsgInterface chan *map[string]interface{}
+	afterListMsgInterface  chan *map[string]interface{}
+	compMsgs               chan Comparison
+	list                   *List
+	listInterface          *ListInterface
+	mutex                  *sync.RWMutex
 }
 
 func New() *Stream {
@@ -58,8 +66,11 @@ func New() *Stream {
 	s.mutex = &sync.RWMutex{}
 	s.beforeListMsg = make(chan *Obj)
 	s.afterListMsg = make(chan *Obj)
+	s.beforeListMsgInterface = make(chan *map[string]interface{})
+	s.afterListMsgInterface = make(chan *map[string]interface{})
 	s.compMsgs = make(chan Comparison)
 	s.list = &List{}
+	s.listInterface = &ListInterface{}
 
 	return s
 }
@@ -72,23 +83,25 @@ func Compare(beforeReader io.Reader, afterReader io.Reader) (*Stream, Comparison
 	s := New()
 
 	wgParse.Add(2)
-	go s.Parse(beforeReader, s.beforeListMsg, &wgParse)
-	go s.Parse(afterReader, s.afterListMsg, &wgParse)
+	//go s.Parse(beforeReader, s.beforeListMsg, &wgParse)
+	//go s.Parse(afterReader, s.afterListMsg, &wgParse)
+	go s.ParseInterface(beforeReader, s.beforeListMsgInterface, &wgParse)
+	go s.ParseInterface(afterReader, s.afterListMsgInterface, &wgParse)
 	go func() {
 		wgParse.Wait()
 	}()
 
-	for i := 0; i < 2; i++ {
-	}
 	wgCompare.Add(2)
-	go s.comparisonWorker(&wgCompare, s.beforeListMsg, Before)
-	go s.comparisonWorker(&wgCompare, s.afterListMsg, After)
+	//go s.comparisonWorker(&wgCompare, s.beforeListMsg, Before)
+	//go s.comparisonWorker(&wgCompare, s.afterListMsg, After)
+	go s.comparisonWorkerInterface(&wgCompare, s.beforeListMsgInterface, Before)
+	go s.comparisonWorkerInterface(&wgCompare, s.afterListMsgInterface, After)
 
 	wgResult.Add(1)
 	go func(wgResult *sync.WaitGroup) {
 		wgCompare.Wait()
 
-		for _, list := range *s.list {
+		for _, list := range *s.listInterface {
 			len := len(list)
 			if len != 2 {
 
@@ -96,7 +109,7 @@ func Compare(beforeReader io.Reader, afterReader io.Reader) (*Stream, Comparison
 
 				return
 			} else {
-				log.Fatalln(list)
+				log.Fatalln("Something happened")
 			}
 		}
 		close(s.compMsgs)
@@ -111,7 +124,7 @@ func Compare(beforeReader io.Reader, afterReader io.Reader) (*Stream, Comparison
 		if comp != Equal {
 			log.Println("comp:", comp)
 			return s, comp
-		}
+		} 
 	}
 
 	log.Println("FINISHED")
@@ -153,6 +166,65 @@ func (s *Stream) Parse(input io.Reader, msgs chan<- *Obj, wg *sync.WaitGroup) {
 		}
 
 		msgs <- &obj
+
+		count++
+	}
+
+	// read closing bracket
+	t, err = decoder.Token()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("%T: %v\n", t, t)
+	fmt.Println("--------")
+	fmt.Println("count : = " + strconv.FormatUint(count, 10))
+	fmt.Println("--------")
+	defer close(msgs)
+}
+
+// Parse does stream processing of json file => less memory footprint, as we read record by record
+func (s *Stream) ParseInterface(input io.Reader, msgs chan<- *map[string]interface{}, wg *sync.WaitGroup) {
+	defer wg.Done()
+	var count uint64 = 0
+	decoder := json.NewDecoder(input)
+
+	// read open bracket
+	t, err := decoder.Token()
+	if err != nil {
+		log.Fatal("[1]", err)
+	}
+	fmt.Printf("%T: %v\n", t, t)
+
+	// while the array contains values
+	for decoder.More() {
+		//var obj Obj
+		var data map[string]interface{}
+		// decode an array value (Message)
+		err := decoder.Decode(&data)
+		if err != nil {
+			if errors.Is(err, io.ErrUnexpectedEOF) && (data["id"] == "" || data == nil) {
+				log.Println("empty id: ", err)
+				s.compMsgs <- InvalidJson
+				return
+			}
+
+			log.Fatal("[2]", err)
+
+		}
+
+		if len(data) == 0 {
+			log.Println("empty id: ", err)
+			s.compMsgs <- InvalidJson
+			return
+		}
+
+		if data["id"] == "" {
+			log.Println("empty id: ", err)
+			s.compMsgs <- InvalidJson
+			return
+		}
+
+		msgs <- &data
 
 		count++
 	}
@@ -212,6 +284,83 @@ func (s *Stream) comparisonWorker(wg *sync.WaitGroup, objMsgs chan *Obj, msgType
 		} else {
 			s.mutex.RUnlock()
 		}
+
+	}
+
+}
+
+func (s *Stream) comparisonWorkerInterface(wg *sync.WaitGroup, objMsgs chan *map[string]interface{}, msgType Type) {
+
+	defer wg.Done()
+
+	for msg := range objMsgs {
+
+		id, ok := (*msg)["id"].(string)
+		if !ok {
+			log.Fatalln(ok)
+		}
+		if len(id) == 0 {
+			s.compMsgs <- Different
+			return
+		}
+
+		s.mutex.Lock()
+		(*msg)["type"] = msgType
+		(*s.listInterface)[id] = append((*s.listInterface)[id], msg)
+		
+
+		
+		length := len((*s.listInterface)[id])
+		hasTwoItems := length == 2
+
+		if hasTwoItems {
+			sameList := (*(*s.listInterface)[id][0])["type"] == (*(*s.listInterface)[id][1])["type"]
+			if sameList {
+				s.mutex.Unlock()
+				s.compMsgs <- DuplicateIds
+				return
+			}
+			
+			
+			newObjects := []map[string]string{}
+			for _, obj := range (*s.listInterface)[id] {
+				delete(*obj, "type")
+				newObj := make(map[string]string)
+				for key, value := range *obj {
+					var newValue string
+					switch v := value.(type) {
+					case nil:
+						newValue = ""
+					case int:
+						newValue = strconv.Itoa(value.(int))
+					case bool:
+						newValue = strconv.FormatBool(value.(bool))
+					case string:
+						newValue = value.(string)
+					//case Type:
+					//	newValue = string(value.(Type))
+					default:
+						log.Fatalln("could not convert value: ", v)
+					}
+
+					newObj[key] = newValue
+				}
+				newObjects = append(newObjects, newObj)
+			}
+			
+			eq := reflect.DeepEqual(newObjects[0], newObjects[1])
+			if !eq {
+				s.compMsgs <- Different
+				
+				delete(*s.listInterface, id) // Whether Objects are equal ot Different, we can free memory
+				s.mutex.Unlock()
+				return
+			} 
+
+			
+			delete(*s.listInterface, id) // Whether Objects are equal ot Different, we can free memory
+		} 
+		s.mutex.Unlock()
 
 	}
 

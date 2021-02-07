@@ -14,21 +14,21 @@ var cases = []struct {
 	alternativeResult Comparison
 }{
 	/* 0 */
-	//{`[{"id": "5","name": "John doe"}]`, `[{"id": "5","name": "John doe"}]`, Equal, None},
-	//{`[{"id": "7","name": "John doe"}]`, `[{"id": "7","name": "John doe"}]`, Equal, None},
-	//{`[{"id": "5","name": "John doe"}]`, `[{"id": "5","name": "42"}]`, Different, None},
-	//{`[{"id": "8","name": "John doe"},{"id": "6","name": "John doe"}]`, `[{"id": "6","name": "John doe"},{"id": "8","name": "John doe"}]`, Equal, None},
-	//{`[{"id": "4","name": "John doe"}]`, `[{"id": "5","name": "John doe"}]`, Different, None},
+	{`[{"id": "5","name": "John doe"}]`, `[{"id": "5","name": "John doe"}]`, Equal, None},
+	{`[{"id": "7","name": "John doe"}]`, `[{"id": "7","name": "John doe"}]`, Equal, None},
+	{`[{"id": "5","name": "John doe"}]`, `[{"id": "5","name": "42"}]`, Different, None},
+	{`[{"id": "8","name": "John doe"},{"id": "6","name": "John doe"}]`, `[{"id": "6","name": "John doe"},{"id": "8","name": "John doe"}]`, Equal, None},
+	{`[{"id": "4","name": "John doe"}]`, `[{"id": "5","name": "John doe"}]`, Different, None},
 	/* 5 */
-	//{`[{"id": "5","name": "John doe"},{"id": "5","name": "John doe"}]`, `[{"id": "9","name": "John doe"},{"id": "5","name": "John doe"}]`, DuplicateIds, Different},
-	//{`[{"id": "5","name": "John doe"},{"id": "6","name": "John doe"}]`, `[{"id": "6","name": "John doe"},{"id": "6","name": "John doe"}]`, DuplicateIds, Different},
-	//{`[{"id": "6","name": "John doe"}]`, `[{}]`, InvalidJson, None},
-	//{`[{"id": "3","name": "John doe"}]`, `[{"id": "3"}]`, Different, None},
-	//{`[{"id": "3","name": "John doe"}]`, `[{"name": "John Doe}]`, InvalidJson, None},
-	//{`[{"id": "3","name": "John doe"}]`, `[{"name": "John Doe}]`, InvalidJson, None},
+	{`[{"id": "5","name": "John doe"},{"id": "5","name": "John doe"}]`, `[{"id": "9","name": "John doe"},{"id": "5","name": "John doe"}]`, DuplicateIds, Different},
+	{`[{"id": "5","name": "John doe"},{"id": "6","name": "John doe"}]`, `[{"id": "6","name": "John doe"},{"id": "6","name": "John doe"}]`, DuplicateIds, Different},
+	{`[{"id": "6","name": "John doe"}]`, `[{}]`, InvalidJson, None},
+	{`[{"id": "3","name": "John doe"}]`, `[{"id": "3"}]`, Different, None},
+	{`[{"id": "3","name": "John doe"}]`, `[{"name": "John Doe}]`, InvalidJson, None},
+	{`[{"id": "3","name": "John doe"}]`, `[{"name": "John Doe}]`, InvalidJson, None},
 	{`[{"id": "3","name": "John doe", "job": "designer"}]`, `[{"id": "3","name": "John doe", "job": "designer"}]`, Equal, None},
 	/* 10 */
-	//{`[{}]`, `[{}]`, InvalidJson, None},
+	{`[{}]`, `[{}]`, InvalidJson, None},
 }
 
 func TestCompare(t *testing.T) {
@@ -47,7 +47,7 @@ func TestCompare(t *testing.T) {
 				hasAlternativeResult := c.alternativeResult != None
 				if hasAlternativeResult {
 					if result != c.alternativeResult {
-						t.Errorf("case %d failed, got: %v, expected: %v", i, result, c.result)
+						t.Errorf("case %d failed, got: %v, expected: %v , or %v", i, result, c.result, c.alternativeResult)
 					}
 				} else {
 					t.Errorf("case %d failed, got: %v, expected: %v", i, result, c.result)
