@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"strconv"
+	"sync"
 )
 
 type Comparison int
@@ -18,6 +19,13 @@ const (
 	None
 )
 
+type Type string
+
+const (
+	Before Type = "Before"
+	After       = "After"
+)
+
 type Data struct {
 	Id   string
 	Name string
@@ -28,27 +36,84 @@ type Obj struct {
 	Name string
 }
 
-type List map [string]Obj
+type ParsedObj struct {
+	Id   string
+	Name string
+	Type Type
+}
 
-type Stream struct{}
+type List map[string][]ParsedObj
+
+type Stream struct {
+	beforeListMsg chan *Obj
+	afterListMsg  chan *Obj
+	compMsgs      chan Comparison
+	list          List
+}
+
+var mutex = &sync.RWMutex{}
 
 // Compare takes two readers, each to a json file, and compares them to find if they are equal
 func Compare(beforeReader io.Reader, afterReader io.Reader) (*Stream, Comparison) {
-	stream := &Stream{}
+	var wgParse sync.WaitGroup
+	var wgCompare sync.WaitGroup
+	var wgResult sync.WaitGroup
+	s := &Stream{}
+	s.beforeListMsg = make(chan *Obj)
+	s.afterListMsg = make(chan *Obj)
+	s.compMsgs = make(chan Comparison)
+	s.list = map[string][]ParsedObj{}
 
-	listBeforeBackup, comp := stream.ParseBefore(beforeReader)
-	if comp != None {
-		return stream, comp
+	wgParse.Add(2)
+	go s.Parse(beforeReader, s.beforeListMsg, &wgParse)
+	go s.Parse(afterReader, s.afterListMsg, &wgParse)
+	go func() {
+		wgParse.Wait()
+	}()
+
+	wgCompare.Add(2)
+	go s.comparisonWorker(&wgCompare, s.beforeListMsg, Before)
+	go s.comparisonWorker(&wgCompare, s.afterListMsg, After)
+
+	wgResult.Add(1)
+	go func(wgResult *sync.WaitGroup) {
+		wgCompare.Wait()
+
+		for _, list := range s.list {
+			len := len(list)
+			if len == 1 {
+				
+				s.compMsgs <- Different
+				
+				return
+			} else {
+				log.Fatalln(list)
+			}
+		}
+		close(s.compMsgs)
+		wgResult.Done()
+	}(&wgResult)
+	
+	go func() {
+		wgResult.Wait()
+	}()
+
+	for comp := range s.compMsgs {
+		if comp != Equal {
+			log.Println("comp:", comp)
+			return s, comp
+		}
 	}
-	comp = stream.Compare(afterReader, listBeforeBackup)
-
-	return stream, comp
+	
+	
+	log.Println("FINISHED")
+	return s, Equal
 }
 
 // Parse does stream processing of json file => less memory footprint, as we read record by record
-func (s *Stream) ParseBefore(input io.Reader) (map [string]Obj, Comparison)  {
+func (s *Stream) Parse(input io.Reader, msgs chan<- *Obj, wg *sync.WaitGroup) {
+	defer wg.Done()
 	var count uint64 = 0
-	var list = make(map [string]Obj)
 	decoder := json.NewDecoder(input)
 
 	// read open bracket
@@ -65,15 +130,16 @@ func (s *Stream) ParseBefore(input io.Reader) (map [string]Obj, Comparison)  {
 		err := decoder.Decode(&obj)
 
 		if err != nil {
+			if obj.Id == "" {
+				log.Println("empty id: ", err)
+				s.compMsgs <- Different
+				return
+			}
 			log.Fatal("[2]", err)
 		}
 		
-		newObj := Obj{
-			Name: obj.Name,
-			Id: obj.Id,
-		}
-		list[obj.Id] = newObj
-
+		msgs <- &obj
+		
 		count++
 	}
 
@@ -86,60 +152,74 @@ func (s *Stream) ParseBefore(input io.Reader) (map [string]Obj, Comparison)  {
 	fmt.Println("--------")
 	fmt.Println("count : = " + strconv.FormatUint(count, 10))
 	fmt.Println("--------")
-
-	return list, None
+	defer close(msgs)
 }
 
+func (s *Stream) comparisonWorker(wg *sync.WaitGroup, objMsgs chan *Obj, msgType Type) {
+	
+	defer wg.Done()
 
-// Parse does stream processing of json file => less memory footprint, as we read record by record
-func (s *Stream) Compare(input io.Reader, listBeforeBackup map[string]Obj) (Comparison)  {
-	var count uint64 = 0
-	decoder := json.NewDecoder(input)
-
-	// read open bracket
-	t, err := decoder.Token()
-	if err != nil {
-		log.Fatal("[1]", err)
-	}
-	fmt.Printf("%T: %v\n", t, t)
-
-	// while the array contains values
-	for decoder.More() {
-		var obj Obj
-		// decode an array value (Message)
-		err := decoder.Decode(&obj)
-
-		if err != nil {
-			log.Fatal("[2]", err)
+	for msg := range objMsgs {
+		parsedObj := ParsedObj{
+			Id:   msg.Id,
+			Name: msg.Name,
+			Type: msgType,
 		}
+		if len(parsedObj.Id) == 0 {
+			s.compMsgs <- Different
+			return
+		}
+		
+		mutex.Lock()
+		s.list[msg.Id] = append(s.list[msg.Id], parsedObj)
+		mutex.Unlock()
 
-		if existentObj, exists := listBeforeBackup[obj.Id]; !exists {
-			log.Println("IDs should be unique. The id:", existentObj.Id, " is already present")
-			return DuplicateIds
-		} else {
-			if existentObj.Name != obj.Name {
-				log.Print("Files are different")
-				log.Print("Before File: id(", existentObj.Id, "), value(", existentObj.Name,")")
-				log.Print("After file: id(", obj.Id, "), value(", obj.Name,")")
-				return Different
+		mutex.RLock()
+		len := len(s.list[msg.Id])
+		hasTwoItems := len == 2
+		
+		if hasTwoItems {
 
-			} else {
-				delete(listBeforeBackup, obj.Id)
+			
+			differentTypes := s.list[msg.Id][0].Type == s.list[msg.Id][1].Type
+			
+			if differentTypes {
+
+				s.compMsgs <- DuplicateIds
+
+				return
 			}
+
+			
+			namesAreDifferent := s.list[msg.Id][0].Name != s.list[msg.Id][1].Name
+			
+			
+			if namesAreDifferent {
+
+				s.compMsgs <- Different
+
+			}
+			mutex.RUnlock()
+			mutex.Lock()
+			delete(s.list, msg.Id) // Whether Objects are equal ot Different, we can free memory
+			mutex.Unlock()
+
+		} else {
+			mutex.RUnlock()
 		}
+		
 	}
 
-	// read closing bracket
-	t, err = decoder.Token()
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Printf("%T: %v\n", t, t)
-	fmt.Println("--------")
-	fmt.Println("count : = " + strconv.FormatUint(count, 10))
-	fmt.Println("--------")
+}
 
-	return Equal
+func (s *Stream) Flush() {
+	
+	s.beforeListMsg = make(chan *Obj)
+	s.afterListMsg = make(chan *Obj)
+	s.compMsgs = make(chan Comparison)
+	s.list = map[string][]ParsedObj{}
+	
+	mutex = &sync.RWMutex{}
 }
 
 func (c Comparison) String() string {

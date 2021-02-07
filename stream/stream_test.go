@@ -2,6 +2,7 @@ package stream
 
 import (
 	"bytes"
+	"log"
 	"testing"
 )
 
@@ -9,27 +10,37 @@ var cases = []struct {
 	a      string
 	b      string
 	result Comparison
+	alternativeResult Comparison
 }{
-	{`[{"id": "5","name": "John doe"}]`, `[{"id": "5","name": "John doe"}]`, Equal},
-	{`[{"id": "5","name": "John doe"}]`, `[{"id": "5","name": "John doe"}]`, Equal},
-	{`[{"id": "5","name": "John doe"}]`, `[{"id": "5","name": "42"}]`, Different},
-	{`[{"id": "5","name": "John doe"},{"id": "6","name": "John doe"}]`, `[{"id": "6","name": "John doe"},{"id": "5","name": "John doe"}]`, Equal},
-	{`[{"id": "4","name": "John doe"}]`, `[{"id": "5","name": "John doe"}]`, Different},
-	{`[{"id": "5","name": "John doe"},{"id": "5","name": "John doe"}]`, `[{"id": "6","name": "John doe"},{"id": "5","name": "John doe"}]`, DuplicateIds},
-	{`[{"id": "5","name": "John doe"},{"id": "6","name": "John doe"}]`, `[{"id": "6","name": "John doe"},{"id": "6","name": "John doe"}]`, DuplicateIds},
+	{`[{"id": "5","name": "John doe"}]`, `[{"id": "5","name": "John doe"}]`, Equal, None},
+	{`[{"id": "7","name": "John doe"}]`, `[{"id": "7","name": "John doe"}]`, Equal, None},
+	{`[{"id": "5","name": "John doe"}]`, `[{"id": "5","name": "42"}]`, Different, None},
+	{`[{"id": "8","name": "John doe"},{"id": "6","name": "John doe"}]`, `[{"id": "6","name": "John doe"},{"id": "8","name": "John doe"}]`, Equal, None},
+	{`[{"id": "4","name": "John doe"}]`, `[{"id": "5","name": "John doe"}]`, Different, None},
+	{`[{"id": "5","name": "John doe"},{"id": "5","name": "John doe"}]`, `[{"id": "9","name": "John doe"},{"id": "5","name": "John doe"}]`, DuplicateIds, Different},
+	{`[{"id": "5","name": "John doe"},{"id": "6","name": "John doe"}]`, `[{"id": "6","name": "John doe"},{"id": "6","name": "John doe"}]`, DuplicateIds, Different},
+	{`[{"id": "6","name": "John doe"}]`, `[{}]`, Different, None},
+	{`[{"id": "3","name": "John doe"}]`, `[{"id": "3"}]`, Different, None},
+	{`[{"id": "3","name": "John doe"}]`, `[{"name": "John Doe}]`, Different, None},
 }
 
 func TestCompare(t *testing.T) {
-	for i, c := range cases {
-		a := bytes.NewReader([]byte(c.a))
-		b := bytes.NewReader([]byte(c.b))
-
-		_, result := Compare(a, b)
-
-		if result != c.result {
-			t.Errorf("case %d failed, got: %v, expected: %v", i, result, c.result)
+	for n := 1; n <= 10; n++ {
+		for i, c := range cases {
+			log.Println("CASE ", i)
+			a := bytes.NewReader([]byte(c.a))
+			b := bytes.NewReader([]byte(c.b))
+	
+			s, result := Compare(a, b)
+	
+			if result != c.result {
+				if c.alternativeResult != None && result != c.alternativeResult {
+					t.Errorf("case %d failed, got: %v, expected: %v", i, result, c.result)
+				}
+			}
+			
+			s.Flush()
 		}
-
 	}
 }
 
@@ -45,7 +56,7 @@ func BenchmarkSlice(b *testing.B) {
 	}
 }
 
-func getObjects(n int) List {
+func getObjects(n int) map[string]Obj {
 	list := make(map[string]Obj, n)
 	for i := range list {
 		list[i] = Obj{

@@ -18,10 +18,10 @@ func main() {
 	flag.Parse()
 	start := time.Now()
 
-	str1 := "xl_before.json"
-	//str1 := "before.json"
-	str2 := "xl_after.json"
-	//str2 := "after.json"
+	//str1 := "xl_before.json"
+	str1 := "before.json"
+	//str2 := "xl_after.json"
+	str2 := "after.json"
 	beforeBackupPtr = &str1
 	afterBackupPtr = &str2
 
