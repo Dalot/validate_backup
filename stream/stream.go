@@ -2,10 +2,13 @@ package stream
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"reflect"
 	"strconv"
+	"sync"
 )
 
 type Comparison int
@@ -18,74 +21,108 @@ const (
 	None
 )
 
+type Type string
+
+const (
+	Before Type = "Before"
+	After       = "After"
+)
+
 type Data struct {
 	Id   string
 	Name string
 }
 
 type Obj struct {
-	Data  Data
-	bytes int64
-	start int64 //byte offset start
-	end   int64 // /byte offset end
+	Id   string
+	Name string
 }
 
-type List []Obj
+type JsonObj *map[string]interface{}
 
-type Stream struct{}
+type List map[string][]*map[string]interface{}
 
-// beforeBackupIDMap is a map that will point the id to an index for the BeforeBackup List
-var beforeBackupIDMap = map[string]uint64{}
+type Stream struct {
+	beforeListMsgs chan *map[string]interface{}
+	afterListMsgs  chan *map[string]interface{}
+	compMsgs               chan Comparison
+	list          *List
+	mutex                  *sync.RWMutex
+}
 
-// afterBackupIDMap is a map that will point the id to an index for the AfterBackup List
-var afterBackupIDMap = map[string]uint64{}
+func New() *Stream {
+	s := &Stream{}
+	s.mutex = &sync.RWMutex{}
+	s.beforeListMsgs = make(chan *map[string]interface{})
+	s.afterListMsgs = make(chan *map[string]interface{})
+	s.compMsgs = make(chan Comparison)
+	s.list = &List{}
+
+	return s
+}
 
 // Compare takes two readers, each to a json file, and compares them to find if they are equal
 func Compare(beforeReader io.Reader, afterReader io.Reader) (*Stream, Comparison) {
-	stream := &Stream{}
+	var wgParse sync.WaitGroup
+	var wgCompare sync.WaitGroup
+	var wgResult sync.WaitGroup
+	s := New()
 
-	listBeforeBackup, comp := stream.Parse(beforeReader, beforeBackupIDMap)
-	if comp != None {
-		return stream, comp
+	wgParse.Add(2)
+	go s.ParseInterface(beforeReader, s.beforeListMsgs, &wgParse)
+	go s.ParseInterface(afterReader, s.afterListMsgs, &wgParse)
+	go func() {
+		wgParse.Wait()
+	}()
+
+	// Tested with 500mb json file
+	// 10 goroutines to each list messages is able to keep memory below 250mb
+	// 30 goroutines seems to do a bit worse, going up to 400mb
+	// 3 - 5 goroutines each seems to be the sweet deal, keeping below 100mb
+	for i := 0; i < 5; i++ {
+		wgCompare.Add(2)
+		go s.comparisonWorkerInterface(&wgCompare, s.beforeListMsgs, Before)
+		go s.comparisonWorkerInterface(&wgCompare, s.afterListMsgs, After)
 	}
-	listAfterBackup, comp := stream.Parse(afterReader, afterBackupIDMap)
-	if comp != None {
-		return stream, comp
-	}
 
-	result := stream.compare(listBeforeBackup, listAfterBackup)
+	wgResult.Add(1)
+	go func(wgResult *sync.WaitGroup) {
+		wgCompare.Wait()
 
-	return stream, result
-}
+		for _, list := range *s.list {
+			len := len(list)
+			if len != 2 {
 
-func (s *Stream) compare(listBeforeBackup *List, listAfterBackup *List) Comparison {
+				s.compMsgs <- Different
 
-	equalFoundObjs := 0
-	for _, obj := range *listBeforeBackup {
-		if index, exists := afterBackupIDMap[obj.Data.Id]; !exists {
-			log.Println("Did not find id(", obj.Data.Id, ") in the file after the backup")
-			return Different
-		} else {
-
-			if obj.Data.Name == (*listAfterBackup)[index].Data.Name {
-				log.Print("Found id(", obj.Data.Id, ") in both files with the same data")
-				log.Print("Location: beforeBackup index:", beforeBackupIDMap[obj.Data.Id], ", afterBackup:", index)
-				equalFoundObjs++
+				return
 			} else {
-				return Different
+				log.Println("Something happened")
 			}
 		}
+		close(s.compMsgs)
+		wgResult.Done()
+	}(&wgResult)
+
+	go func() {
+		wgResult.Wait()
+	}()
+
+	for comp := range s.compMsgs {
+		if comp != Equal {
+			log.Println("comp:", comp)
+			return s, comp
+		} 
 	}
 
-	log.Println("equalFoundObjs: (", equalFoundObjs, ")")
-
-	return Equal
+	log.Println("FINISHED")
+	return s, Equal
 }
 
 // Parse does stream processing of json file => less memory footprint, as we read record by record
-func (s *Stream) Parse(input io.Reader, idMap map[string]uint64) (*List, Comparison)  {
+func (s *Stream) ParseInterface(input io.Reader, msgs chan<- *map[string]interface{}, wg *sync.WaitGroup) {
+	defer wg.Done()
 	var count uint64 = 0
-	var list *List = &List{}
 	decoder := json.NewDecoder(input)
 
 	// read open bracket
@@ -97,30 +134,41 @@ func (s *Stream) Parse(input io.Reader, idMap map[string]uint64) (*List, Compari
 
 	// while the array contains values
 	for decoder.More() {
-		var data Data
+		//var obj Obj
+		var data map[string]interface{}
 		// decode an array value (Message)
-		currentOffset := decoder.InputOffset()
 		err := decoder.Decode(&data)
-
 		if err != nil {
+			if errors.Is(err, io.ErrUnexpectedEOF) && (data["id"] == "" || data == nil) {
+				log.Println("empty id: ", err)
+				s.compMsgs <- InvalidJson
+				return
+			}
+
 			log.Fatal("[2]", err)
+
 		}
 
-		finalOffset := decoder.InputOffset()
-		obj := Obj{
-			Data:  data,
-			start: currentOffset,
-			end:   finalOffset,
-			bytes: finalOffset - currentOffset,
+		val, ok := data["id"].(float64)
+		if ok {
+			data["id"] = strconv.Itoa(int(val))
 		}
 
-		if index, exists := idMap[data.Id]; exists {
-			log.Println("IDs should be unique. The id:", data.Id, " is already present and has value index of:", index)
-			return &List{}, DuplicateIds
+
+		if len(data) == 0 {
+			log.Println("empty id: ", err)
+			s.compMsgs <- InvalidJson
+			return
 		}
 
-		idMap[data.Id] = count
-		*list = append(*list, obj)
+		if data["id"] == "" {
+			log.Println("empty id: ", err)
+			s.compMsgs <- InvalidJson
+			return
+		}
+
+		msgs <- &data
+
 		count++
 	}
 
@@ -133,13 +181,82 @@ func (s *Stream) Parse(input io.Reader, idMap map[string]uint64) (*List, Compari
 	fmt.Println("--------")
 	fmt.Println("count : = " + strconv.FormatUint(count, 10))
 	fmt.Println("--------")
-
-	return list, None
+	defer close(msgs)
 }
 
-func (s *Stream) Flush() {
-	beforeBackupIDMap = map[string]uint64{}
-	afterBackupIDMap = map[string]uint64{}
+func (s *Stream) comparisonWorkerInterface(wg *sync.WaitGroup, objMsgs chan *map[string]interface{}, msgType Type) {
+
+	defer wg.Done()
+
+	for msg := range objMsgs {
+
+		id, ok := (*msg)["id"].(string)
+		if !ok {
+			log.Fatalln(ok)
+		}
+		if len(id) == 0 {
+			s.compMsgs <- Different
+			return
+		}
+
+		s.mutex.Lock()
+		(*msg)["type"] = msgType
+		(*s.list)[id] = append((*s.list)[id], msg)
+		
+		length := len((*s.list)[id])
+		hasTwoItems := length == 2
+
+		if hasTwoItems {
+			sameList := (*(*s.list)[id][0])["type"] == (*(*s.list)[id][1])["type"]
+			if sameList {
+				s.mutex.Unlock()
+				s.compMsgs <- DuplicateIds
+				return
+			}
+			
+			
+			newObjects := []map[string]string{}
+			for _, obj := range (*s.list)[id] {
+				delete(*obj, "type")
+				newObj := make(map[string]string)
+				for key, value := range *obj {
+					var newValue string
+					switch v := value.(type) {
+					case nil:
+						newValue = ""
+					case int:
+						newValue = strconv.Itoa(value.(int))
+					case bool:
+						newValue = strconv.FormatBool(value.(bool))
+					case string:
+						newValue = value.(string)
+					//case Type:
+					//	newValue = string(value.(Type))
+					default:
+						log.Fatalln("could not convert value: ", v)
+					}
+
+					newObj[key] = newValue
+				}
+				newObjects = append(newObjects, newObj)
+			}
+			
+			eq := reflect.DeepEqual(newObjects[0], newObjects[1])
+			if !eq {
+				s.compMsgs <- Different
+				
+				delete(*s.list, id) // Whether Objects are equal ot Different, we can free memory
+				s.mutex.Unlock()
+				return
+			} 
+
+			
+			delete(*s.list, id) // Whether Objects are equal ot Different, we can free memory
+		} 
+		s.mutex.Unlock()
+
+	}
+
 }
 
 func (c Comparison) String() string {
