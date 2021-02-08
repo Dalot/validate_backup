@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/Dalot/validate_backup/input"
 	"github.com/Dalot/validate_backup/memstat"
 	"github.com/Dalot/validate_backup/stream"
 )
@@ -16,17 +17,13 @@ func main() {
 	flag.Parse()
 	start := time.Now()
 
-	//str1 := "xl_before.json"
-	//str1 := "before.json"
-	//str2 := "xl_after.json"
-	//str2 := "after.json"
-	//beforeBackupPtr = &str1
-	//afterBackupPtr = &str2
-
 	log.Println("before: ", *beforeBackupPtr, "after: ", *afterBackupPtr)
-	beforeReader, afterReader := reader.InitReaders(*beforeBackupPtr, *afterBackupPtr)
-	// this program is about parsing a large json file using a small memory footprint.
-	// you may generate data using generate_data.sh it generate ~900mB in ~600 seconds.
+	filesInput := input.FilesInput{
+		BeforeFileStr: *beforeBackupPtr,
+		AfterFileStr:  *afterBackupPtr,
+	}
+	beforeReader, afterReader := filesInput.InitReaders()
+
 	go memstat.PrintUsage()
 	_, result := stream.Compare(beforeReader, afterReader)
 

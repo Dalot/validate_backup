@@ -25,14 +25,21 @@ var cases = []struct {
 	{`[{"id": "6","name": "John doe"}]`, `[{}]`, InvalidJson, None},
 	{`[{"id": "3","name": "John doe"}]`, `[{"id": "3"}]`, Different, None},
 	{`[{"id": "3","name": "John doe"}]`, `[{"name": "John Doe}]`, InvalidJson, None},
+	/* 10 */
 	{`[{"id": "3","name": "John doe"}]`, `[{"name": "John Doe}]`, InvalidJson, None},
 	{`[{"id": "3","name": "John doe", "job": "designer"}]`, `[{"id": "3","name": "John doe", "job": "designer"}]`, Equal, None},
-	/* 10 */
+	{`[{"id": 3,"name": "John doe", "job": "designer"}]`, `[{"id": 3,"name": "John doe", "job": "designer"}]`, Equal, None},
+	{`[{"id": 3,"name": "John doe", "job": true }]`, `[{"id": 3,"name": "John doe", "job": true }]`, Equal, None},
+	{`[{"id": 3,"name": "John doe", "job": true }]`, `[{"id": 3,"name": "John doe", "job": true }]`, Equal, None},
+	// TODO: Support nested slices and objects of any type
+	//{`[{"id": 3,"name": "John doe", "job": [false, true] }]`, `[{"id": 3,"name": "John doe", "job": [false, true] }]`, Equal, None},
+	//{`[{"id": 3,"name": "John doe", "job": { "1": "great job", "2": "boring job"} }]`, `[{"id": 3,"name": "John doe", "job": [false, true] }]`, Equal, None},
 	{`[{}]`, `[{}]`, InvalidJson, None},
 }
 
 func TestCompare(t *testing.T) {
-	for n := 1; n <= 10; n++ {
+	// run 10 times each test to reduce the probability of concurrency bugs
+	for n := 1; n <= 10; n++ { 
 		for i, c := range cases {
 			log.Println("CASE ", i)
 			bytesInput := input.BytesInput{
@@ -85,13 +92,12 @@ func BenchmarkSlice(b *testing.B) {
 	}
 }
 
-func getObjects(n int) map[string]*ParsedObj {
-	list := make(map[string]*ParsedObj, n)
+func getObjects(n int) map[string]*Obj {
+	list := make(map[string]*Obj, n)
 	for i := range list {
-		list[i] = &ParsedObj{
+		list[i] = &Obj{
 			Name: "John",
 			Id:   "Doe",
-			Type: Before,
 		}
 	}
 	return list
